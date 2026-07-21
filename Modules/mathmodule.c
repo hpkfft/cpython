@@ -916,7 +916,7 @@ is_error(double x, int raise_edom)
    C89 but for which HUGE_VAL is not an infinity.
 
    For the majority of one-argument functions these rules are enough
-   to ensure that Python's functions behave as specified in Annex F
+   to ensure that Python's functions behave as specified in 'Annex F'
    of the C99 standard, with the 'invalid' and 'divide-by-zero'
    floating-point exceptions mapping to Python's ValueError and the
    'overflow' floating-point exception mapping to OverflowError.
@@ -1011,11 +1011,12 @@ math_1a(PyObject *arg, double (*func) (double), const char *err_msg)
    The last rule is used to catch overflow on platforms which follow
    C89 but for which HUGE_VAL is not an infinity.
 
-   For most two-argument functions (copysign, fmod, hypot) these rules
-   are enough to ensure that Python's functions behave as specified in
-   Annex F of the C99 standard, with the 'invalid' and 'divide-by-zero'
-   floating-point exceptions mapping to Python's ValueError and the
-   'overflow' floating-point exception mapping to OverflowError.
+   For most two-argument functions (copysign, fmod, hypot)
+   these rules are enough to ensure that Python's functions behave as
+   specified in 'Annex F' of the C99 standard, with the 'invalid' and
+   'divide-by-zero' floating-point exceptions mapping to Python's
+   ValueError and the 'overflow' floating-point exception mapping to
+   OverflowError.
 */
 
 static PyObject *
