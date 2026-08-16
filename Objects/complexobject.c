@@ -11,7 +11,6 @@
 #include "pycore_freelist.h"      // _Py_FREELIST_FREE(), _Py_FREELIST_POP()
 #include "pycore_long.h"          // _PyLong_GetZero()
 #include "pycore_object.h"        // _PyObject_Init()
-#include "pycore_pymath.h"        // _Py_ADJUST_ERANGE2()
 
 
 #define _PyComplexObject_CAST(op)   ((PyComplexObject *)(op))
@@ -333,7 +332,16 @@ _Py_c_pow(Py_complex a, Py_complex b)
         r.real = len*cos(phase);
         r.imag = len*sin(phase);
 
-        _Py_ADJUST_ERANGE2(r.real, r.imag);
+        if (isinf(r.real) || isinf(r.imag)) {
+            if (errno == 0) {
+                /* It looks like overflow, but libm didn't set errno. */
+                errno = ERANGE;
+            }
+        }
+        else if (errno == ERANGE) {
+            /* It looks like libm set errno because of underflow. */
+            errno = 0;
+        }
     }
     return r;
 }
@@ -753,7 +761,6 @@ complex_pow(PyObject *v, PyObject *w, PyObject *z)
     // a faster and more accurate algorithm.
     if (b.imag == 0.0 && b.real == floor(b.real) && fabs(b.real) <= 100.0) {
         p = c_powi(a, (long)b.real);
-        _Py_ADJUST_ERANGE2(p.real, p.imag);
     }
     else {
         p = _Py_c_pow(a, b);
@@ -764,7 +771,7 @@ complex_pow(PyObject *v, PyObject *w, PyObject *z)
                         "zero to a negative or complex power");
         return NULL;
     }
-    else if (errno == ERANGE) {
+    else if (isinf(p.real) || isinf(p.imag)) {
         PyErr_SetString(PyExc_OverflowError,
                         "complex exponentiation");
         return NULL;

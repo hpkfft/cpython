@@ -787,13 +787,17 @@ float_pow(PyObject *v, PyObject *w, PyObject *z)
      */
     errno = 0;
     ix = pow(iv, iw);
-    _Py_ADJUST_ERANGE1(ix);
     if (negate_result)
         ix = -ix;
 
-    if (errno != 0) {
-        /* We don't expect any errno value other than ERANGE, but
-         * the range of libm bugs appears unbounded.
+    if (isinf(ix)) {
+        PyErr_SetString(PyExc_OverflowError,
+                        "Numerical result out of range");
+        return NULL;
+    }
+    if (ix != 0.0 && errno != 0) {
+        /* We don't expect any errno value other than ERANGE (for underflow,
+         * which should mean ix == 0.0), but libm may have bugs.
          */
         PyErr_SetFromErrno(errno == ERANGE ? PyExc_OverflowError :
                              PyExc_ValueError);
