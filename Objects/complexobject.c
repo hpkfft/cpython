@@ -305,8 +305,8 @@ _Py_rc_quot(double a, Py_complex b)
 #pragma optimize("", on)
 #endif
 
-Py_complex
-_Py_c_pow(Py_complex a, Py_complex b)
+static Py_complex
+c_pow(Py_complex a, Py_complex b, int *e)
 {
     Py_complex r;
     double vabs,len,at,phase;
@@ -316,7 +316,7 @@ _Py_c_pow(Py_complex a, Py_complex b)
     }
     else if (a.real == 0. && a.imag == 0.) {
         if (b.imag != 0. || b.real < 0.)
-            errno = EDOM;
+            *e = EDOM;
         r.real = 0.;
         r.imag = 0.;
     }
@@ -331,7 +331,23 @@ _Py_c_pow(Py_complex a, Py_complex b)
         }
         r.real = len*cos(phase);
         r.imag = len*sin(phase);
+        if ((isinf(r.real) || isinf(r.imag))
+                 && isfinite(a.real) && isfinite(a.imag)
+                 && isfinite(b.real) && isfinite(b.imag)) {
+            *e = ERANGE;
+        }
     }
+    return r;
+}
+
+Py_complex
+_Py_c_pow(Py_complex a, Py_complex b)
+{
+    Py_complex r;
+    int e = 0;
+    int saved_errno = errno;
+    r = c_pow(a, b, &e);
+    errno = (e) ? e : saved_errno;
     return r;
 }
 
@@ -352,13 +368,25 @@ c_powu(Py_complex x, long n)
 }
 
 static Py_complex
-c_powi(Py_complex x, long n)
+c_powi(Py_complex x, long n, int *e)
 {
-    if (n > 0)
-        return c_powu(x,n);
-    else
-        return _Py_c_quot(c_1, c_powu(x,-n));
+    Py_complex r;
 
+    if (x.real == 0. && x.imag == 0. && n != 0) {
+        if (n < 0)
+            *e = EDOM;
+        r.real = 0.;
+        r.imag = 0.;
+    }
+    else {
+        r = (n < 0) ? _Py_rc_quot(1.0, c_powu(x, -n)) : c_powu(x, n);
+    }
+
+    if ((isinf(r.real) || isinf(r.imag))
+             && isfinite(x.real) && isfinite(x.imag)) {
+        *e = ERANGE;
+    }
+    return r;
 }
 
 double
@@ -745,22 +773,22 @@ complex_pow(PyObject *v, PyObject *w, PyObject *z)
         PyErr_SetString(PyExc_ValueError, "complex modulo");
         return NULL;
     }
-    errno = 0;
+    int e = 0;
     // Check whether the exponent has a small integer value, and if so use
     // a faster and more accurate algorithm.
     if (b.imag == 0.0 && b.real == floor(b.real) && fabs(b.real) <= 100.0) {
-        p = c_powi(a, (long)b.real);
+        p = c_powi(a, (long)b.real, &e);
     }
     else {
-        p = _Py_c_pow(a, b);
+        p = c_pow(a, b, &e);
     }
 
-    if (errno == EDOM) {
+    if (e == EDOM) {
         PyErr_SetString(PyExc_ZeroDivisionError,
                         "zero to a negative or complex power");
         return NULL;
     }
-    else if (isinf(p.real) || isinf(p.imag)) {
+    else if (e == ERANGE) {
         PyErr_SetString(PyExc_OverflowError,
                         "complex exponentiation result out of range");
         return NULL;
