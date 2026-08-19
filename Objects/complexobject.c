@@ -331,17 +331,6 @@ _Py_c_pow(Py_complex a, Py_complex b)
         }
         r.real = len*cos(phase);
         r.imag = len*sin(phase);
-
-        if (isinf(r.real) || isinf(r.imag)) {
-            if (errno == 0) {
-                /* It looks like overflow, but libm didn't set errno. */
-                errno = ERANGE;
-            }
-        }
-        else if (errno == ERANGE) {
-            /* It looks like libm set errno because of underflow. */
-            errno = 0;
-        }
     }
     return r;
 }
@@ -773,7 +762,7 @@ complex_pow(PyObject *v, PyObject *w, PyObject *z)
     }
     else if (isinf(p.real) || isinf(p.imag)) {
         PyErr_SetString(PyExc_OverflowError,
-                        "complex exponentiation");
+                        "complex exponentiation result out of range");
         return NULL;
     }
     return PyComplex_FromCComplex(p);

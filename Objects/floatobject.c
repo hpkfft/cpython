@@ -785,22 +785,13 @@ float_pow(PyObject *v, PyObject *w, PyObject *z)
      * positive and not equal to 1.0.  We finally allow
      * the platform pow to step in and do the rest.
      */
-    errno = 0;
     ix = pow(iv, iw);
     if (negate_result)
         ix = -ix;
 
     if (isinf(ix)) {
         PyErr_SetString(PyExc_OverflowError,
-                        "Numerical result out of range");
-        return NULL;
-    }
-    if (ix != 0.0 && errno != 0) {
-        /* We don't expect any errno value other than ERANGE (for underflow,
-         * which should mean ix == 0.0), but libm may have bugs.
-         */
-        PyErr_SetFromErrno(errno == ERANGE ? PyExc_OverflowError :
-                             PyExc_ValueError);
+                        "float exponentiation result out of range");
         return NULL;
     }
     return PyFloat_FromDouble(ix);
@@ -840,20 +831,14 @@ float_is_integer_impl(PyObject *self)
 /*[clinic end generated code: output=7112acf95a4d31ea input=311810d3f777e10d]*/
 {
     double x = PyFloat_AsDouble(self);
-    PyObject *o;
 
     if (x == -1.0 && PyErr_Occurred())
         return NULL;
     if (!isfinite(x))
         Py_RETURN_FALSE;
-    errno = 0;
-    o = (floor(x) == x) ? Py_True : Py_False;
-    if (errno != 0) {
-        PyErr_SetFromErrno(errno == ERANGE ? PyExc_OverflowError :
-                             PyExc_ValueError);
-        return NULL;
-    }
-    return Py_NewRef(o);
+    if (floor(x) == x)
+        Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
 }
 
 /*[clinic input]
