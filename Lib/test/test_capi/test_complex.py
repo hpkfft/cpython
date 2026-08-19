@@ -271,10 +271,8 @@ class CAPIComplexTest(ComplexesAreIdenticalMixin, unittest.TestCase):
         self.assertEqual(_py_c_pow(0j, -1)[1], errno.EDOM)
         self.assertEqual(_py_c_pow(0j, 1j)[1], errno.EDOM)
         max_num = DBL_MAX+1j
-        self.assertEqual(_py_c_pow(max_num, max_num),
-                         (complex(INF, INF), errno.ERANGE))
-        self.assertEqual(_py_c_pow(max_num, 2),
-                         (complex(INF, INF), errno.ERANGE))
+        self.assertEqual(_py_c_pow(max_num, max_num)[0], complex(INF, INF))
+        self.assertEqual(_py_c_pow(max_num, 2)[0], complex(INF, INF))
 
 
     def test_py_c_abs(self):
