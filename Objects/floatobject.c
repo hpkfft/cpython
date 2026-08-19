@@ -836,9 +836,7 @@ float_is_integer_impl(PyObject *self)
         return NULL;
     if (!isfinite(x))
         Py_RETURN_FALSE;
-    if (floor(x) == x)
-        Py_RETURN_TRUE;
-    Py_RETURN_FALSE;
+    return PyBool_FromLong(floor(x) == x);
 }
 
 /*[clinic input]
