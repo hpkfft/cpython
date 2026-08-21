@@ -165,8 +165,8 @@ _Py_rc_prod(double a, Py_complex b)
 #ifdef _M_ARM64
 #pragma optimize("", off)
 #endif
-Py_complex
-_Py_c_quot(Py_complex a, Py_complex b)
+static Py_complex
+c_quot(Py_complex a, Py_complex b)
 {
     /******************************************************************
     This was the original algorithm.  It's grossly prone to spurious
@@ -196,16 +196,11 @@ _Py_c_quot(Py_complex a, Py_complex b)
 
     if (abs_breal >= abs_bimag) {
         /* divide tops and bottom by b.real */
-        if (abs_breal == 0.0) {
-            errno = EDOM;
-            r.real = r.imag = 0.0;
-        }
-        else {
-            const double ratio = b.imag / b.real;
-            const double denom = b.real + b.imag * ratio;
-            r.real = (a.real + a.imag * ratio) / denom;
-            r.imag = (a.imag - a.real * ratio) / denom;
-        }
+        /* If b.real == b.imag == 0.0, r.real and r.imag will be NaN. */
+        const double ratio = b.imag / b.real;
+        const double denom = b.real + b.imag * ratio;
+        r.real = (a.real + a.imag * ratio) / denom;
+        r.imag = (a.imag - a.real * ratio) / denom;
     }
     else if (abs_bimag >= abs_breal) {
         /* divide tops and bottom by b.imag */
@@ -245,21 +240,30 @@ _Py_c_quot(Py_complex a, Py_complex b)
 }
 
 Py_complex
-_Py_cr_quot(Py_complex a, double b)
+_Py_c_quot(Py_complex a, Py_complex b)
 {
-    Py_complex r = a;
-    if (b) {
-        r.real /= b;
-        r.imag /= b;
+    Py_complex r;
+    if (b.real == 0.0 && b.imag == 0.0) {
+        errno = EDOM;
+        r.real = r.imag = 0.0;  // As documented, so shall it be done.
     }
     else {
-        errno = EDOM;
-        r.real = r.imag = 0.0;
+        r = c_quot(a, b);
     }
     return r;
 }
 
-/* an equivalent of _Py_c_quot() function, when 1st argument is real */
+Py_complex
+_Py_cr_quot(Py_complex a, double b)
+{
+    Py_complex r = a;
+    // May overflow or may result in NaN.
+    r.real /= b;
+    r.imag /= b;
+    return r;
+}
+
+/* an equivalent of c_quot() function, when 1st argument is real */
 Py_complex
 _Py_rc_quot(double a, Py_complex b)
 {
@@ -268,16 +272,10 @@ _Py_rc_quot(double a, Py_complex b)
     const double abs_bimag = b.imag < 0 ? -b.imag : b.imag;
 
     if (abs_breal >= abs_bimag) {
-        if (abs_breal == 0.0) {
-            errno = EDOM;
-            r.real = r.imag = 0.0;
-        }
-        else {
-            const double ratio = b.imag / b.real;
-            const double denom = b.real + b.imag * ratio;
-            r.real = a / denom;
-            r.imag = (-a * ratio) / denom;
-        }
+        const double ratio = b.imag / b.real;
+        const double denom = b.real + b.imag * ratio;
+        r.real = a / denom;
+        r.imag = (-a * ratio) / denom;
     }
     else if (abs_bimag >= abs_breal) {
         const double ratio = b.real / b.imag;
@@ -306,6 +304,22 @@ _Py_rc_quot(double a, Py_complex b)
 #endif
 
 static Py_complex
+c_powu(Py_complex x, long n)
+{
+    Py_complex r, p;
+    long mask = 1;
+    r = c_1;
+    p = x;
+    while (mask > 0 && n >= mask) {
+        if (n & mask)
+            r = _Py_c_prod(r,p);
+        mask <<= 1;
+        p = _Py_c_prod(p,p);
+    }
+    return r;
+}
+
+static Py_complex
 c_pow(Py_complex a, Py_complex b, int *e)
 {
     Py_complex r;
@@ -319,6 +333,17 @@ c_pow(Py_complex a, Py_complex b, int *e)
             *e = EDOM;
         r.real = 0.;
         r.imag = 0.;
+    }
+    else if (b.imag == 0.0 && b.real == floor(b.real)
+             && fabs(b.real) <= 100.0) {
+        // The exponent is a small integer value, so use a faster and
+        // more accurate algorithm.
+        long n = (long)b.real;
+        r = (n < 0) ? _Py_rc_quot(1.0, c_powu(a, -n)) : c_powu(a, n);
+        if ((isinf(r.real) || isinf(r.imag))
+                 && isfinite(a.real) && isfinite(a.imag)) {
+            *e = ERANGE;
+        }
     }
     else {
         vabs = hypot(a.real,a.imag);
@@ -347,52 +372,14 @@ _Py_c_pow(Py_complex a, Py_complex b)
     int e = 0;
     int saved_errno = errno;
     r = c_pow(a, b, &e);
+    // Sets errno = EDOM on invalid, ERANGE on overflow, else unchanged.
     errno = (e) ? e : saved_errno;
     return r;
 }
 
-static Py_complex
-c_powu(Py_complex x, long n)
+static double
+c_abs(Py_complex z, int *e)
 {
-    Py_complex r, p;
-    long mask = 1;
-    r = c_1;
-    p = x;
-    while (mask > 0 && n >= mask) {
-        if (n & mask)
-            r = _Py_c_prod(r,p);
-        mask <<= 1;
-        p = _Py_c_prod(p,p);
-    }
-    return r;
-}
-
-static Py_complex
-c_powi(Py_complex x, long n, int *e)
-{
-    Py_complex r;
-
-    if (x.real == 0. && x.imag == 0. && n != 0) {
-        if (n < 0)
-            *e = EDOM;
-        r.real = 0.;
-        r.imag = 0.;
-    }
-    else {
-        r = (n < 0) ? _Py_rc_quot(1.0, c_powu(x, -n)) : c_powu(x, n);
-    }
-
-    if ((isinf(r.real) || isinf(r.imag))
-             && isfinite(x.real) && isfinite(x.imag)) {
-        *e = ERANGE;
-    }
-    return r;
-}
-
-double
-_Py_c_abs(Py_complex z)
-{
-    /* sets errno = ERANGE on overflow;  otherwise errno = 0 */
     double result;
 
     if (!isfinite(z.real) || !isfinite(z.imag)) {
@@ -401,12 +388,10 @@ _Py_c_abs(Py_complex z)
            NaN. */
         if (isinf(z.real)) {
             result = fabs(z.real);
-            errno = 0;
             return result;
         }
         if (isinf(z.imag)) {
             result = fabs(z.imag);
-            errno = 0;
             return result;
         }
         /* either the real or imaginary part is a NaN,
@@ -415,10 +400,20 @@ _Py_c_abs(Py_complex z)
     }
     result = hypot(z.real, z.imag);
     if (!isfinite(result))
-        errno = ERANGE;
-    else
-        errno = 0;
+        *e = ERANGE;
     return result;
+}
+
+double
+_Py_c_abs(Py_complex z)
+{
+    double r;
+    int e = 0;
+    int saved_errno = errno;
+    r = c_abs(z, &e);
+    // Sets errno = ERANGE on overflow, else errno is unchanged.
+    errno = (e) ? e : saved_errno;
+    return r;
 }
 
 static PyObject *
@@ -718,15 +713,17 @@ real_to_complex(PyObject **pobj, Py_complex *pc)
    See C11's Annex G, sections G.5.1 and G.5.2.
  */
 
-#define COMPLEX_BINOP(NAME, FUNC)                           \
+#define COMPLEX_BINOP(NAME, FUNC, IS_DIVISION)              \
     static PyObject *                                       \
     complex_##NAME(PyObject *v, PyObject *w)                \
     {                                                       \
         Py_complex a;                                       \
-        errno = 0;                                          \
         if (PyComplex_Check(w)) {                           \
             Py_complex b = ((PyComplexObject *)w)->cval;    \
             if (PyComplex_Check(v)) {                       \
+                if (IS_DIVISION && b.real == 0.0            \
+                                && b.imag == 0.0)           \
+                    goto DivByZero;                         \
                 a = ((PyComplexObject *)v)->cval;           \
                 a = _Py_c_##FUNC(a, b);                     \
             }                                               \
@@ -734,6 +731,9 @@ real_to_complex(PyObject **pobj, Py_complex *pc)
                 return v;                                   \
             }                                               \
             else {                                          \
+                if (IS_DIVISION && b.real == 0.0            \
+                                && b.imag == 0.0)           \
+                    goto DivByZero;                         \
                 a = _Py_rc_##FUNC(a.real, b);               \
             }                                               \
         }                                                   \
@@ -746,20 +746,22 @@ real_to_complex(PyObject **pobj, Py_complex *pc)
             if (real_to_double(&w, &b) < 0) {               \
                 return w;                                   \
             }                                               \
+            if (IS_DIVISION && b == 0.0)                    \
+                goto DivByZero;                             \
             a = _Py_cr_##FUNC(a, b);                        \
         }                                                   \
-        if (errno == EDOM) {                                \
-            PyErr_SetString(PyExc_ZeroDivisionError,        \
-                            "division by zero");            \
-            return NULL;                                    \
-        }                                                   \
         return PyComplex_FromCComplex(a);                   \
-   }
+                                                            \
+      DivByZero:                                            \
+        PyErr_SetString(PyExc_ZeroDivisionError,            \
+                        "division by zero");                \
+        return NULL;                                        \
+    }
 
-COMPLEX_BINOP(add, sum)
-COMPLEX_BINOP(mul, prod)
-COMPLEX_BINOP(sub, diff)
-COMPLEX_BINOP(div, quot)
+COMPLEX_BINOP(add, sum,  0)
+COMPLEX_BINOP(mul, prod, 0)
+COMPLEX_BINOP(sub, diff, 0)
+COMPLEX_BINOP(div, quot, 1)
 
 static PyObject *
 complex_pow(PyObject *v, PyObject *w, PyObject *z)
@@ -774,14 +776,7 @@ complex_pow(PyObject *v, PyObject *w, PyObject *z)
         return NULL;
     }
     int e = 0;
-    // Check whether the exponent has a small integer value, and if so use
-    // a faster and more accurate algorithm.
-    if (b.imag == 0.0 && b.real == floor(b.real) && fabs(b.real) <= 100.0) {
-        p = c_powi(a, (long)b.real, &e);
-    }
-    else {
-        p = c_pow(a, b, &e);
-    }
+    p = c_pow(a, b, &e);
 
     if (e == EDOM) {
         PyErr_SetString(PyExc_ZeroDivisionError,
@@ -820,8 +815,9 @@ static PyObject *
 complex_abs(PyObject *op)
 {
     PyComplexObject *v = _PyComplexObject_CAST(op);
-    double result = _Py_c_abs(v->cval);
-    if (errno == ERANGE) {
+    int e = 0;
+    double result = c_abs(v->cval, &e);
+    if (e == ERANGE) {
         PyErr_SetString(PyExc_OverflowError,
                         "absolute value too large");
         return NULL;
