@@ -25,8 +25,6 @@ class complex "PyComplexObject *" "&PyComplex_Type"
 
 /* elementary operations on complex numbers */
 
-static Py_complex c_1 = {1., 0.};
-
 Py_complex
 _Py_c_sum(Py_complex a, Py_complex b)
 {
@@ -304,18 +302,22 @@ _Py_rc_quot(double a, Py_complex b)
 #endif
 
 static Py_complex
-c_powu(Py_complex x, long n)
+c_powi(Py_complex x, long n)
 {
-    Py_complex r, p;
-    long mask = 1;
-    r = c_1;
-    p = x;
-    while (mask > 0 && n >= mask) {
-        if (n & mask)
-            r = _Py_c_prod(r,p);
-        mask <<= 1;
-        p = _Py_c_prod(p,p);
+    Py_complex r = x;
+    long absn = (n < 0) ? -n : n;
+
+    assert(absn > 0);
+    if (--absn & 0x1)
+        r = _Py_c_prod(r, x);
+    while (absn >>= 1) {
+        x = _Py_c_prod(x, x);
+        if (absn & 0x1)
+            r = _Py_c_prod(r, x);
     }
+
+    if (n < 0)
+        r = _Py_rc_quot(1.0, r);
     return r;
 }
 
@@ -328,18 +330,16 @@ c_pow(Py_complex a, Py_complex b, int *e)
         r.real = 1.;
         r.imag = 0.;
     }
-    else if (a.real == 0. && a.imag == 0.) {
-        if (b.imag != 0. || b.real < 0.)
-            *e = EDOM;
+    else if (a.real == 0. && a.imag == 0. && (b.imag != 0. || b.real < 0.)) {
         r.real = 0.;
         r.imag = 0.;
+        *e = EDOM;
     }
     else if (b.imag == 0.0 && b.real == floor(b.real)
              && fabs(b.real) <= 100.0) {
         // The exponent is a small integer value, so use a faster and
         // more accurate algorithm.
-        long n = (long)b.real;
-        r = (n < 0) ? _Py_rc_quot(1.0, c_powu(a, -n)) : c_powu(a, n);
+        r = c_powi(a, (long)b.real);
         if ((isinf(r.real) || isinf(r.imag))
                  && isfinite(a.real) && isfinite(a.imag)) {
             *e = ERANGE;
