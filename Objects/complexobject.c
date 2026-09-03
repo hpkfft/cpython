@@ -26,7 +26,7 @@ class complex "PyComplexObject *" "&PyComplex_Type"
 /* elementary operations on complex numbers */
 
 Py_complex
-_Py_c_sum(Py_complex a, Py_complex b)
+_Py_c_sum(Py_complex a, Py_complex b)  // public API (soft deprecated)
 {
     Py_complex r;
     r.real = a.real + b.real;
@@ -49,7 +49,7 @@ _Py_rc_sum(double a, Py_complex b)
 }
 
 Py_complex
-_Py_c_diff(Py_complex a, Py_complex b)
+_Py_c_diff(Py_complex a, Py_complex b)  // public API (soft deprecated)
 {
     Py_complex r;
     r.real = a.real - b.real;
@@ -75,7 +75,7 @@ _Py_rc_diff(double a, Py_complex b)
 }
 
 Py_complex
-_Py_c_neg(Py_complex a)
+_Py_c_neg(Py_complex a)  // public API (soft deprecated)
 {
     Py_complex r;
     r.real = -a.real;
@@ -84,7 +84,7 @@ _Py_c_neg(Py_complex a)
 }
 
 Py_complex
-_Py_c_prod(Py_complex z, Py_complex w)
+_Py_c_prod(Py_complex z, Py_complex w)  // public API (soft deprecated)
 {
     double a = z.real, b = z.imag, c = w.real, d = w.imag;
     double ac = a*c, bd = b*d, ad = a*d, bc = b*c;
@@ -236,7 +236,7 @@ c_quot(Py_complex a, Py_complex b)
 }
 
 Py_complex
-_Py_c_quot(Py_complex a, Py_complex b)
+_Py_c_quot(Py_complex a, Py_complex b)  // public API (soft deprecated)
 {
     Py_complex r;
     if (_Py_c_iszero(b)) {
@@ -360,7 +360,7 @@ c_pow(Py_complex a, Py_complex b, int *e)
 }
 
 Py_complex
-_Py_c_pow(Py_complex a, Py_complex b)
+_Py_c_pow(Py_complex a, Py_complex b)  // public API (soft deprecated)
 {
     Py_complex r;
     int e = 0;
@@ -399,7 +399,7 @@ c_abs(Py_complex z, int *e)
 }
 
 double
-_Py_c_abs(Py_complex z)
+_Py_c_abs(Py_complex z)  // public API (soft deprecated)
 {
     double r;
     int e = 0;
@@ -707,7 +707,7 @@ real_to_complex(PyObject **pobj, Py_complex *pc)
    See C11's Annex G, sections G.5.1 and G.5.2.
  */
 
-#define COMPLEX_BINOP(NAME, FUNC, IS_DIVISION)              \
+#define COMPLEX_BINOP(NAME, FUNC)                           \
     static PyObject *                                       \
     complex_##NAME(PyObject *v, PyObject *w)                \
     {                                                       \
@@ -715,9 +715,6 @@ real_to_complex(PyObject **pobj, Py_complex *pc)
         if (PyComplex_Check(w)) {                           \
             Py_complex b = ((PyComplexObject *)w)->cval;    \
             if (PyComplex_Check(v)) {                       \
-                if (IS_DIVISION && b.real == 0.0            \
-                                && b.imag == 0.0)           \
-                    goto DivByZero;                         \
                 a = ((PyComplexObject *)v)->cval;           \
                 a = _Py_c_##FUNC(a, b);                     \
             }                                               \
@@ -725,9 +722,6 @@ real_to_complex(PyObject **pobj, Py_complex *pc)
                 return v;                                   \
             }                                               \
             else {                                          \
-                if (IS_DIVISION && b.real == 0.0            \
-                                && b.imag == 0.0)           \
-                    goto DivByZero;                         \
                 a = _Py_rc_##FUNC(a.real, b);               \
             }                                               \
         }                                                   \
@@ -740,22 +734,56 @@ real_to_complex(PyObject **pobj, Py_complex *pc)
             if (real_to_double(&w, &b) < 0) {               \
                 return w;                                   \
             }                                               \
-            if (IS_DIVISION && b == 0.0)                    \
-                goto DivByZero;                             \
             a = _Py_cr_##FUNC(a, b);                        \
         }                                                   \
         return PyComplex_FromCComplex(a);                   \
-                                                            \
-      DivByZero:                                            \
-        PyErr_SetString(PyExc_ZeroDivisionError,            \
-                        "division by zero");                \
-        return NULL;                                        \
     }
 
-COMPLEX_BINOP(add, sum,  0)
-COMPLEX_BINOP(mul, prod, 0)
-COMPLEX_BINOP(sub, diff, 0)
-COMPLEX_BINOP(div, quot, 1)
+COMPLEX_BINOP(add, sum)
+COMPLEX_BINOP(mul, prod)
+COMPLEX_BINOP(sub, diff)
+
+static PyObject *
+complex_div(PyObject *v, PyObject *w)
+{
+    Py_complex a;
+    if (PyComplex_Check(w)) {
+        Py_complex b = ((PyComplexObject *)w)->cval;
+        if (PyComplex_Check(v)) {
+            if (_Py_c_iszero(b))
+                goto DivByZero;
+            a = ((PyComplexObject *)v)->cval;
+            a = c_quot(a, b);
+        }
+        else if (real_to_double(&v, &a.real) < 0) {
+            return v;
+        }
+        else {
+            if (_Py_c_iszero(b))
+                goto DivByZero;
+            a = _Py_rc_quot(a.real, b);
+        }
+    }
+    else if (!PyComplex_Check(v)) {
+        Py_RETURN_NOTIMPLEMENTED;
+    }
+    else {
+        a = ((PyComplexObject *)v)->cval;
+        double b;
+        if (real_to_double(&w, &b) < 0) {
+            return w;
+        }
+        if (b == 0.0)
+            goto DivByZero;
+        a = _Py_cr_quot(a, b);
+    }
+    return PyComplex_FromCComplex(a);
+
+  DivByZero:
+    PyErr_SetString(PyExc_ZeroDivisionError,
+                    "division by zero");
+    return NULL;
+}
 
 static PyObject *
 complex_pow(PyObject *v, PyObject *w, PyObject *z)
