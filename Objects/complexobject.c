@@ -216,16 +216,14 @@ c_quot(Py_complex a, Py_complex b)
     /* Recover infinities and zeros that computed as nan+nanj.  See e.g.
        the C11, Annex G.5.2, routine _Cdivd(). */
     if (isnan(r.real) && isnan(r.imag)) {
-        if ((isinf(a.real) || isinf(a.imag))
-            && isfinite(b.real) && isfinite(b.imag))
+        if (_Py_c_isinf(a) && _Py_c_isfinite(b))
         {
             const double x = copysign(isinf(a.real) ? 1.0 : 0.0, a.real);
             const double y = copysign(isinf(a.imag) ? 1.0 : 0.0, a.imag);
             r.real = INFINITY * (x*b.real + y*b.imag);
             r.imag = INFINITY * (y*b.real - x*b.imag);
         }
-        else if ((isinf(abs_breal) || isinf(abs_bimag))
-                 && isfinite(a.real) && isfinite(a.imag))
+        else if (_Py_c_isinf(b) && _Py_c_isfinite(a))
         {
             const double x = copysign(isinf(b.real) ? 1.0 : 0.0, b.real);
             const double y = copysign(isinf(b.imag) ? 1.0 : 0.0, b.imag);
@@ -241,7 +239,7 @@ Py_complex
 _Py_c_quot(Py_complex a, Py_complex b)
 {
     Py_complex r;
-    if (b.real == 0.0 && b.imag == 0.0) {
+    if (_Py_c_iszero(b)) {
         errno = EDOM;
         r.real = r.imag = 0.0;  // As documented, so shall it be done.
     }
@@ -286,8 +284,7 @@ _Py_rc_quot(double a, Py_complex b)
         r.real = r.imag = Py_NAN;
     }
 
-    if (isnan(r.real) && isnan(r.imag) && isfinite(a)
-        && (isinf(abs_breal) || isinf(abs_bimag)))
+    if (isnan(r.real) && isnan(r.imag) && isfinite(a) && _Py_c_isinf(b))
     {
         const double x = copysign(isinf(b.real) ? 1.0 : 0.0, b.real);
         const double y = copysign(isinf(b.imag) ? 1.0 : 0.0, b.imag);
@@ -340,8 +337,7 @@ c_pow(Py_complex a, Py_complex b, int *e)
         // The exponent is a small integer value, so use a faster and
         // more accurate algorithm.
         r = c_powi(a, (long)b.real);
-        if ((isinf(r.real) || isinf(r.imag))
-                 && isfinite(a.real) && isfinite(a.imag)) {
+        if (_Py_c_isinf(r) && _Py_c_isfinite(a)) {
             *e = ERANGE;
         }
     }
@@ -356,9 +352,7 @@ c_pow(Py_complex a, Py_complex b, int *e)
         }
         r.real = len*cos(phase);
         r.imag = len*sin(phase);
-        if ((isinf(r.real) || isinf(r.imag))
-                 && isfinite(a.real) && isfinite(a.imag)
-                 && isfinite(b.real) && isfinite(b.imag)) {
+        if (_Py_c_isinf(r) && _Py_c_isfinite(a) && _Py_c_isfinite(b)) {
             *e = ERANGE;
         }
     }
@@ -382,7 +376,7 @@ c_abs(Py_complex z, int *e)
 {
     double result;
 
-    if (!isfinite(z.real) || !isfinite(z.imag)) {
+    if (!_Py_c_isfinite(z)) {
         /* C99 rules: if either the real or the imaginary part is an
            infinity, return infinity, even if the other part is a
            NaN. */
